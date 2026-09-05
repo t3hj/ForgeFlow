@@ -1,4 +1,5 @@
 import type { AnalysisJob } from '../../../src/application/analysis.ts';
+import { runPipeline, type PipelineInput, type PipelineResult } from '../../../src/analysis/pipeline.ts';
 
 export interface AnalysisStage {
   name: string;
@@ -16,4 +17,8 @@ export const analysisStages: AnalysisStage[] = [
 
 export async function runAnalysis(job: AnalysisJob, stages: AnalysisStage[] = analysisStages): Promise<void> {
   for (const stage of stages) await stage.run(job);
+}
+
+export async function runRepositoryAnalysis(input: PipelineInput): Promise<PipelineResult> {
+  return runPipeline(input);
 }
