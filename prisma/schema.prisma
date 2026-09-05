@@ -1,0 +1,250 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  DEVELOPER
+  VIEWER
+}
+
+enum AnalysisStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum FindingSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum FindingStatus {
+  OPEN
+  ACKNOWLEDGED
+  IN_PROGRESS
+  RESOLVED
+  FALSE_POSITIVE
+}
+
+enum FindingCategory {
+  SECURITY
+  QUALITY
+  DEPENDENCY
+  TEST
+}
+
+model User {
+  id                String          @id @default(cuid())
+  githubId          String?         @unique
+  email             String          @unique
+  displayName       String
+  role              UserRole        @default(DEVELOPER)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  repositories      Repository[]
+  comments          ReviewComment[]
+  auditLogs         AuditLog[]
+  assignedFindings  Finding[]        @relation("FindingAssignee")
+}
+
+model Repository {
+  id                String          @id @default(cuid())
+  githubId          String          @unique
+  owner             String
+  name              String
+  defaultBranch     String
+  url               String
+  connectedUserId   String
+  connectedUser     User            @relation(fields: [connectedUserId], references: [id])
+  pullRequests      PullRequest[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([connectedUserId])
+  @@index([owner, name])
+}
+
+model PullRequest {
+  id                String          @id @default(cuid())
+  repositoryId      String
+  repository        Repository      @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  githubNumber      Int
+  title             String
+  description       String?
+  author            String
+  baseBranch        String
+  headBranch        String
+  additions         Int             @default(0)
+  deletions         Int             @default(0)
+  changedFiles      ChangedFile[]
+  commits           Commit[]
+  reviews           Review[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@unique([repositoryId, githubNumber])
+  @@index([repositoryId, updatedAt])
+}
+
+model Commit {
+  id                String       @id @default(cuid())
+  pullRequestId     String
+  pullRequest       PullRequest  @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  sha               String       @unique
+  message           String
+  author            String
+  committedAt       DateTime
+
+  @@index([pullRequestId])
+}
+
+model ChangedFile {
+  id                String       @id @default(cuid())
+  pullRequestId     String
+  pullRequest       PullRequest  @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  path              String
+  status             String
+  additions         Int          @default(0)
+  deletions         Int          @default(0)
+  diff              String
+  findings          Finding[]
+
+  @@unique([pullRequestId, path])
+}
+
+model Review {
+  id                String          @id @default(cuid())
+  pullRequestId     String
+  pullRequest       PullRequest     @relation(fields: [pullRequestId], references: [id], onDelete: Cascade)
+  status            AnalysisStatus  @default(QUEUED)
+  progress          Int             @default(0)
+  riskScore         Int?
+  riskClassification String?
+  analysisRuns      AnalysisRun[]
+  testRuns          TestRun[]
+  securityScans     SecurityScan[]
+  aiReview          AiReview?
+  createdAt         DateTime        @default(now())
+  completedAt       DateTime?
+
+  @@index([pullRequestId, createdAt])
+  @@index([status])
+}
+
+model AnalysisRun {
+  id                String          @id @default(cuid())
+  reviewId          String
+  review            Review          @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  stage             String
+  status            AnalysisStatus  @default(QUEUED)
+  progress          Int             @default(0)
+  result            Json?
+  error             String?
+  startedAt         DateTime?
+  completedAt       DateTime?
+  createdAt         DateTime        @default(now())
+
+  @@unique([reviewId, stage])
+  @@index([status])
+}
+
+model TestRun {
+  id            String       @id @default(cuid())
+  reviewId      String
+  review        Review       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  status        AnalysisStatus @default(QUEUED)
+  testCount     Int          @default(0)
+  passed        Int          @default(0)
+  failed        Int          @default(0)
+  skipped       Int          @default(0)
+  durationMs    Int?
+  output        String?
+  createdAt     DateTime     @default(now())
+
+  @@index([reviewId])
+}
+
+model SecurityScan {
+  id          String       @id @default(cuid())
+  reviewId    String
+  review      Review       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  status      AnalysisStatus @default(QUEUED)
+  findings    Json?
+  createdAt   DateTime     @default(now())
+
+  @@index([reviewId])
+}
+
+model AiReview {
+  id                  String       @id @default(cuid())
+  reviewId            String       @unique
+  review              Review       @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  status              AnalysisStatus @default(QUEUED)
+  summary             String?
+  overallRisk         Int?
+  engineeringQuality  Int?
+  securityRisk        Int?
+  output              Json?
+  createdAt           DateTime     @default(now())
+}
+
+model Finding {
+  id              String          @id @default(cuid())
+  changedFileId   String?
+  changedFile     ChangedFile?    @relation(fields: [changedFileId], references: [id], onDelete: Cascade)
+  title           String
+  severity        FindingSeverity
+  category        FindingCategory
+  line            Int?
+  explanation     String
+  evidence        String
+  recommendation  String
+  confidence      Int
+  status          FindingStatus   @default(OPEN)
+  assigneeId      String?
+  assignee        User?           @relation("FindingAssignee", fields: [assigneeId], references: [id])
+  comments        ReviewComment[]
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([severity, status])
+  @@index([assigneeId])
+}
+
+model ReviewComment {
+  id          String    @id @default(cuid())
+  authorId    String
+  author      User      @relation(fields: [authorId], references: [id])
+  findingId   String?
+  finding     Finding?  @relation(fields: [findingId], references: [id], onDelete: Cascade)
+  file        String?
+  line        Int?
+  message     String
+  createdAt   DateTime  @default(now())
+
+  @@index([findingId])
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  actorId     String?
+  actor       User?    @relation(fields: [actorId], references: [id])
+  action      String
+  resource    String
+  resourceId  String
+  result      String
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([resource, resourceId])
+  @@index([actorId, createdAt])
+}
