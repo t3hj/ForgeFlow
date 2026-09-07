@@ -1,5 +1,7 @@
 import type { AnalysisJob } from '../../../src/application/analysis.ts';
 import { runPipeline, type PipelineInput, type PipelineResult } from '../../../src/analysis/pipeline.ts';
+import { AnalysisWorker, type AnalysisInputLoader } from '../../../src/application/worker.ts';
+import { RedisAnalysisQueue } from '../../../src/application/redis-queue.ts';
 
 export interface AnalysisStage {
   name: string;
@@ -21,4 +23,8 @@ export async function runAnalysis(job: AnalysisJob, stages: AnalysisStage[] = an
 
 export async function runRepositoryAnalysis(input: PipelineInput): Promise<PipelineResult> {
   return runPipeline(input);
+}
+
+export async function processNextQueuedAnalysis(queue: RedisAnalysisQueue, loader: AnalysisInputLoader): Promise<PipelineResult | null> {
+  return new AnalysisWorker(queue, loader).processNext();
 }
