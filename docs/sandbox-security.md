@@ -2,14 +2,13 @@
 
 Repository code is untrusted and must never execute directly in the API or worker host process.
 
-The test runner will launch a short-lived container with:
+The test runner creates a short-lived Docker command with:
 
 - a read-only source mount;
-- a non-root user;
-- CPU and memory limits;
-- a hard execution timeout;
-- a temporary writable workspace only;
+- a non-root image contract;
+- CPU, memory, PID, and execution-time limits;
+- a temporary writable `/tmp` mount with `noexec` and `nosuid`;
 - network disabled by default;
-- dropped Linux capabilities and a restrictive seccomp profile.
+- dropped Linux capabilities and `no-new-privileges`.
 
-The worker treats timeout, resource exhaustion, and policy violations as failed test runs. The sandbox image is versioned and built by CI so the execution environment is reviewable.
+Only allowlisted project commands are generated: `npm test -- --runInBand` for Node projects and `pytest -q` for Python projects. Unknown project types are not executed. The executor implementation is responsible for enforcing the timeout and capturing exit code/output; the API never runs repository commands directly.
