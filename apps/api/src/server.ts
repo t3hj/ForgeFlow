@@ -6,12 +6,14 @@ import { MemoryAnalysisQueue } from '../../../src/application/memory-queue.ts';
 import { RedisAnalysisQueue } from '../../../src/application/redis-queue.ts';
 import { MemoryAnalysisStore } from '../../../src/application/persistence.ts';
 import { PrismaAnalysisStore } from '../../../src/infrastructure/prisma-store.ts';
+import { Authenticator, AuthorizationError } from '../../../src/security/auth.ts';
 
 const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
 const prisma = process.env.DATABASE_URL ? new PrismaClient() : null;
 const queue = redis ? new RedisAnalysisQueue(redis) : new MemoryAnalysisQueue();
 const store = prisma ? new PrismaAnalysisStore(prisma) : new MemoryAnalysisStore();
 const analyses = new AnalysisService(queue, store);
+const authenticator = new Authenticator();
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json' });
@@ -34,14 +36,19 @@ const server = createServer(async (request, response) => {
 
   if (request.method === 'POST' && request.url === '/v1/analyses') {
     try {
+      const user = authenticator.authorize(authenticator.authenticate(request.headers), 'ANALYSIS_RUN');
       const body = await readJson(request);
       const job = await analyses.request({
         repositoryId: typeof body.repositoryId === 'string' ? body.repositoryId : '',
         pullRequestNumber: typeof body.pullRequestNumber === 'number' ? body.pullRequestNumber : 0,
-        requestedBy: typeof body.requestedBy === 'string' ? body.requestedBy : '',
+        requestedBy: user.id,
       });
       sendJson(response, 202, job);
     } catch (error) {
+      if (error instanceof AuthorizationError) {
+        sendJson(response, error.status, { error: error.message });
+        return;
+      }
       sendJson(response, 400, { error: error instanceof Error ? error.message : 'invalid request' });
     }
     return;
