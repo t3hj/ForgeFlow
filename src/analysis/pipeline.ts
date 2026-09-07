@@ -1,5 +1,6 @@
 import type { AnalysisJob } from '../application/analysis.js';
 import { scanFiles, type ScannableFile, type ScannerFinding } from './scanner.js';
+import { calculateRisk, type RiskResult } from '../domain/risk.ts';
 
 export type PipelineStageStatus = 'RUNNING' | 'COMPLETED' | 'FAILED';
 
@@ -20,6 +21,7 @@ export interface PipelineInput {
 export interface PipelineResult {
   status: 'COMPLETED' | 'FAILED';
   findings: ScannerFinding[];
+  risk: RiskResult;
   updates: PipelineUpdate[];
 }
 
@@ -46,11 +48,20 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       updates.push(completed);
       await input.onUpdate?.(completed);
     }
-    return { status: 'COMPLETED', findings, updates };
+    const risk = calculateRisk({
+      findings: findings.map((finding) => ({ severity: finding.severity, category: finding.category })),
+      changedFileCount: input.files.length,
+      complexityDelta: 0,
+      testFailures: 0,
+      authenticationChanged: input.files.some((file) => /auth|login|session/i.test(file.path)),
+      databaseChanged: input.files.some((file) => /migration|schema|database/i.test(file.path)),
+      infrastructureChanged: input.files.some((file) => /docker|terraform|k8s|\.ya?ml$/i.test(file.path)),
+    });
+    return { status: 'COMPLETED', findings, risk, updates };
   } catch (error) {
     const failed: PipelineUpdate = { stage: 'pipeline', status: 'FAILED', progress: 0, error: error instanceof Error ? error.message : 'analysis failed' };
     updates.push(failed);
     await input.onUpdate?.(failed);
-    return { status: 'FAILED', findings, updates };
+    return { status: 'FAILED', findings, risk: calculateRisk({ findings: [], changedFileCount: input.files.length, complexityDelta: 0, testFailures: 0, authenticationChanged: false, databaseChanged: false, infrastructureChanged: false }), updates };
   }
 }

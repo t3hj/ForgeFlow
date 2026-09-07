@@ -12,6 +12,7 @@ describe('runPipeline', () => {
 
     expect(result.status).toBe('COMPLETED');
     expect(result.findings[0]).toMatchObject({ file: 'src/unsafe.ts', line: 1, severity: 'HIGH' });
+    expect(result.risk).toMatchObject({ score: 23, classification: 'LOW' });
     expect(updates).toEqual([2, 12, 22, 32, 42, 52, 58, 68, 74, 84, 86, 96]);
   });
 });
