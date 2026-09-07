@@ -1,3 +1,6 @@
+import type { AnalysisStore } from './persistence.ts';
+import { MemoryAnalysisStore } from './persistence.ts';
+
 export type AnalysisStatus = 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
 
 export interface AnalysisRequest {
@@ -22,9 +25,11 @@ export interface AnalysisQueue {
 
 export class AnalysisService {
   private readonly queue: AnalysisQueue;
+  private readonly store: AnalysisStore;
 
-  constructor(queue: AnalysisQueue) {
+  constructor(queue: AnalysisQueue, store: AnalysisStore = new MemoryAnalysisStore()) {
     this.queue = queue;
+    this.store = store;
   }
 
   async request(request: AnalysisRequest): Promise<AnalysisJob> {
@@ -44,6 +49,7 @@ export class AnalysisService {
       createdAt: new Date().toISOString(),
     };
 
+    await this.store.createQueuedJob(job);
     await this.queue.enqueue(job);
     return job;
   }

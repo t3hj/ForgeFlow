@@ -1,4 +1,4 @@
-import type { AnalysisJob, AnalysisQueue } from './analysis.js';
+import type { AnalysisJob, AnalysisQueue } from './analysis.ts';
 
 export interface RedisListClient {
   rpush(key: string, value: string): Promise<number>;

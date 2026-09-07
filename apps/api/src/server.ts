@@ -1,9 +1,17 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
+import Redis from 'ioredis';
+import { PrismaClient } from '@prisma/client';
 import { AnalysisService } from '../../../src/application/analysis.ts';
 import { MemoryAnalysisQueue } from '../../../src/application/memory-queue.ts';
+import { RedisAnalysisQueue } from '../../../src/application/redis-queue.ts';
+import { MemoryAnalysisStore } from '../../../src/application/persistence.ts';
+import { PrismaAnalysisStore } from '../../../src/infrastructure/prisma-store.ts';
 
-const queue = new MemoryAnalysisQueue();
-const analyses = new AnalysisService(queue);
+const redis = process.env.REDIS_URL ? new Redis(process.env.REDIS_URL) : null;
+const prisma = process.env.DATABASE_URL ? new PrismaClient() : null;
+const queue = redis ? new RedisAnalysisQueue(redis) : new MemoryAnalysisQueue();
+const store = prisma ? new PrismaAnalysisStore(prisma) : new MemoryAnalysisStore();
+const analyses = new AnalysisService(queue, store);
 
 function sendJson(response: ServerResponse, status: number, body: unknown): void {
   response.writeHead(status, { 'content-type': 'application/json' });
