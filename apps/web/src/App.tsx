@@ -1,53 +1,40 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
+import { checkHealth, queueAnalysis, type AnalysisJob } from './api.ts';
 
 type ApiState = 'checking' | 'online' | 'offline';
-
-type AnalysisJob = {
-  id: string;
-  status: 'QUEUED' | 'RUNNING' | 'COMPLETED' | 'FAILED';
-  progress: number;
-  repositoryId: string;
-  pullRequestNumber: number;
-};
-
-const apiUrl = import.meta.env.VITE_API_URL ?? 'http://localhost:4000';
+const apiUrl = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '');
 
 export function App() {
   const [apiState, setApiState] = useState<ApiState>('checking');
+  const [healthCheck, setHealthCheck] = useState(0);
   const [repositoryId, setRepositoryId] = useState('');
   const [pullRequestNumber, setPullRequestNumber] = useState('');
+  const [token, setToken] = useState('');
   const [job, setJob] = useState<AnalysisJob | null>(null);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    fetch(`${apiUrl}/health`)
-      .then((response) => {
-        if (!response.ok) throw new Error('API unavailable');
-        setApiState('online');
-      })
-      .catch(() => setApiState('offline'));
-  }, []);
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 10000);
+    let active = true;
+    setApiState('checking');
+    checkHealth(apiUrl, controller.signal)
+      .then(() => { if (active) setApiState('online'); })
+      .catch(() => { if (active) setApiState('offline'); });
+    return () => { active = false; window.clearTimeout(timeout); controller.abort(); };
+  }, [healthCheck]);
 
-  async function startAnalysis(event: React.FormEvent<HTMLFormElement>) {
+  async function startAnalysis(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (submitting) return;
     setError('');
     setSubmitting(true);
     try {
-      const response = await fetch(`${apiUrl}/v1/analyses`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          repositoryId,
-          pullRequestNumber: Number(pullRequestNumber),
-          requestedBy: 'dashboard-user',
-        }),
-      });
-      const result = await response.json() as AnalysisJob | { error: string };
-      if (!response.ok) throw new Error('error' in result ? result.error : 'Unable to queue analysis');
-      setJob(result as AnalysisJob);
+      setJob(await queueAnalysis(apiUrl, token, repositoryId, pullRequestNumber));
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : 'Unable to queue analysis');
+      setError(requestError instanceof Error && /token|account|whole|repository|HTTP|unexpected/.test(requestError.message)
+        ? requestError.message : 'Could not reach the API. Check the connection and try again.');
     } finally {
       setSubmitting(false);
     }
@@ -55,37 +42,44 @@ export function App() {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#overview">Skip to workspace</a>
       <aside className="sidebar">
         <div className="brand"><span className="brand-mark">F</span><span>ForgeFlow</span></div>
         <div className="workspace-label">WORKSPACE</div>
-        <nav>
-          <a className="active" href="#overview"><span>◈</span> Overview</a>
-          <a href="#repositories"><span>⌘</span> Repositories</a>
-          <a href="#pull-requests"><span>↗</span> Pull requests</a>
-          <a href="#findings"><span>!</span> Findings</a>
-          <a href="#security"><span>盾</span> Security</a>
-          <a href="#analytics"><span>◒</span> Analytics</a>
+        <nav aria-label="Workspace navigation">
+          <a href="#overview"><span aria-hidden="true">◈</span> Overview</a>
+          <a href="#review"><span aria-hidden="true">↗</span> Start a review</a>
+          <a href="#activity"><span aria-hidden="true">◷</span> Latest request</a>
+          <a href="#pipeline"><span aria-hidden="true">⌘</span> Build status</a>
         </nav>
-        <div className="sidebar-footer"><a href="#settings"><span>⚙</span> Settings</a><a href="#audit"><span>◷</span> Audit log</a></div>
+        <div className="sidebar-footer"><a href="https://github.com/t3hj/ForgeFlow#readme" target="_blank" rel="noreferrer">Project documentation ↗</a></div>
       </aside>
 
       <main className="main-content" id="overview">
-        <header className="topbar"><div><span className="eyebrow">ENGINEERING INTELLIGENCE</span><h1>Good morning, engineer.</h1></div><div className="topbar-actions"><span className={`api-status ${apiState}`}><i /> API {apiState}</span><button className="avatar">DF</button></div></header>
-
-        <section className="hero-row"><div><p className="section-kicker">Review control center</p><h2>Ship with evidence.</h2><p className="hero-copy">Connect a pull request and let ForgeFlow trace the change from diff to decision.</p></div><div className="hero-signal"><span className="signal-dot" /><div><strong>Pipeline ready</strong><small>Deterministic checks first, AI second</small></div></div></section>
-
+        <header className="topbar"><div><span className="eyebrow">ENGINEERING INTELLIGENCE</span><h1>Your review workspace.</h1></div><div className="topbar-actions"><span className={`api-status ${apiState}`} role="status"><i aria-hidden="true" /> API {apiState}</span><span className="prototype-badge">Development prototype</span></div></header>
+        <section className="hero-row"><div><p className="section-kicker">Review control center</p><h2>Ship with evidence.</h2><p className="hero-copy">A workspace for pull request analysis, evidence-backed findings and transparent risk scoring.</p></div><div className="hero-signal"><span className="signal-dot" aria-hidden="true" /><div><strong>Built in stages</strong><small>Deterministic checks first</small></div></div></section>
         <section className="metrics" aria-label="Review metrics">
-          <Metric label="Open findings" value="--" note="Connect a repository to begin" />
-          <Metric label="Average risk" value="--" note="No reviews recorded" />
-          <Metric label="Test pass rate" value="--" note="No test runs recorded" />
-          <Metric label="Repositories" value="--" note="No repositories connected" />
+          <Metric label="Open findings" value="—" note="Dashboard integration planned" />
+          <Metric label="Average risk" value="—" note="No reporting endpoint yet" />
+          <Metric label="Test pass rate" value="—" note="Sandbox wiring in progress" />
+          <Metric label="Repositories" value="—" note="Connection workflow in progress" />
         </section>
-
         <section className="content-grid">
-          <div className="panel queue-panel"><div className="panel-heading"><div><span className="panel-label">ANALYSIS QUEUE</span><h3>Start a review</h3></div><span className="stage-count">01 / 06</span></div><p className="panel-description">Queue a pull request for diff extraction, static analysis, security scanning, tests, and controlled AI review.</p><form onSubmit={startAnalysis}><label>Repository ID<input value={repositoryId} onChange={(event) => setRepositoryId(event.target.value)} placeholder="repo_123" required /></label><label>Pull request number<input type="number" min="1" value={pullRequestNumber} onChange={(event) => setPullRequestNumber(event.target.value)} placeholder="42" required /></label><button className="primary-button" disabled={submitting || apiState !== 'online'}>{submitting ? 'Queueing...' : 'Queue analysis'} <span>→</span></button></form>{error && <p className="form-error">{error}</p>}{job && <div className="job-result"><span className="job-icon">✓</span><div><strong>Analysis queued</strong><small>{job.repositoryId} · PR #{job.pullRequestNumber} · {job.status}</small></div><span className="job-progress">{job.progress}%</span></div>}</div>
-          <div className="panel activity-panel"><div className="panel-heading"><div><span className="panel-label">SYSTEM ACTIVITY</span><h3>Latest signal</h3></div><button className="icon-button" aria-label="Refresh activity">↻</button></div><div className="empty-state"><div className="empty-icon">◌</div><strong>Nothing has run yet</strong><p>Your first analysis will appear here with stage-by-stage progress and evidence.</p></div></div>
+          <section className="panel queue-panel" id="review" aria-labelledby="review-title"><div className="panel-heading"><div><span className="panel-label">ANALYSIS QUEUE</span><h3 id="review-title">Start a review</h3></div><span className="stage-count">API / v0.1</span></div><p className="panel-description">Submit a repository ID and pull request number to the queue API. Processing requires a configured worker and repository input loader.</p>
+            {apiState === 'offline' && <div className="connection-note" role="status"><p>The API is unavailable. Start the local API or check your deployment configuration.</p><button type="button" onClick={() => setHealthCheck(value => value + 1)}>Retry connection</button></div>}
+            <form onSubmit={startAnalysis} aria-busy={submitting}>
+              <label className="token-field">Workspace access token<input type="password" autoComplete="off" spellCheck={false} value={token} onChange={event => setToken(event.target.value)} placeholder="Enter your access token" required aria-describedby="token-note" /></label>
+              <p id="token-note" className="field-note">Kept in memory for this tab only. Provided by your workspace administrator.</p>
+              <label>Repository ID<input value={repositoryId} onChange={event => setRepositoryId(event.target.value)} placeholder="repo_123" required /></label>
+              <label>Pull request number<input type="number" min="1" step="1" value={pullRequestNumber} onChange={event => setPullRequestNumber(event.target.value)} placeholder="42" required /></label>
+              <button className="primary-button" disabled={submitting || apiState !== 'online' || !token.trim()}>{submitting ? 'Queueing…' : 'Queue analysis'} <span aria-hidden="true">→</span></button>
+            </form>
+            {error && <p className="form-error" role="alert">{error}</p>}
+          </section>
+          <section className="panel activity-panel" id="activity" aria-labelledby="activity-title"><div className="panel-heading"><div><span className="panel-label">THIS SESSION</span><h3 id="activity-title">Latest request</h3></div></div><div aria-live="polite" role="status">{job ? <div className="job-result"><span className="job-icon" aria-hidden="true">✓</span><div><strong>Request accepted</strong><small>{job.repositoryId} · PR #{job.pullRequestNumber}</small><small>{job.status} · {job.progress}% at submission</small><small>Job ID: {job.id}</small><p className="field-note">This is the queue receipt. Live progress and results are not connected to this dashboard yet.</p></div></div> : <div className="empty-state"><div className="empty-icon" aria-hidden="true">◌</div><strong>No requests this session</strong><p>Your most recent queue receipt will appear here. Previous requests are not loaded into this view.</p></div>}</div></section>
         </section>
-        <footer className="page-footer"><span>ForgeFlow v0.1 · Local workspace</span><span>Evidence over intuition</span></footer>
+        <section className="panel build-status" id="pipeline" aria-labelledby="build-title"><span className="panel-label">BUILD STATUS</span><h3 id="build-title">What works today. What comes next.</h3><div className="build-columns"><div><h4>Implemented modules</h4><p>Role-checked queue API, Redis queue and worker abstraction, PostgreSQL store, GitHub diff and signature helpers, static security heuristics, deterministic risk scoring and audited finding transitions.</p></div><div><h4>Integration in progress</h4><p>GitHub connection UI, continuous worker deployment, persisted results in the dashboard, dependency-stage wiring, sandbox execution and model-provider review. This prototype does not claim a completed end-to-end review.</p></div></div></section>
+        <footer className="page-footer"><span>ForgeFlow v0.1 · Development workspace</span><span>Evidence over intuition</span></footer>
       </main>
     </div>
   );

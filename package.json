@@ -4,6 +4,9 @@
   "private": true,
   "description": "AI-powered software engineering and repository intelligence platform",
   "scripts": {
+    "dev": "vite apps/web --config apps/web/vite.config.ts --host 0.0.0.0",
+    "dev:api": "node --experimental-strip-types apps/api/src/server.ts",
+    "build": "npm run build --prefix apps/web",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
