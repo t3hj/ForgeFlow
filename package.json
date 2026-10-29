@@ -28,5 +28,10 @@
     "ioredis": "^5.11.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
+  },
+  "overrides": {
+    "@prisma/config": {
+      "deepmerge-ts": "8.0.0"
+    }
   }
 }
