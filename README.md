@@ -2,6 +2,13 @@
 
 ForgeFlow is a software engineering and repository intelligence prototype. It combines deterministic pull request checks, evidence-backed findings, transparent risk scoring and an auditable finding lifecycle. Controlled model review is a planned pipeline integration, with validation helpers already implemented.
 
+## Interface preview
+
+![ForgeFlow local development dashboard](https://raw.githubusercontent.com/t3hj/portfolio-website/main/assets/projects/forgeflow-preview.jpg)
+
+Local prototype capture from 29 October 2026. The API is disconnected and metrics
+are unpopulated; this is not a functioning production review dashboard.
+
 ## What is implemented
 
 - A strict TypeScript domain layer with deterministic risk scoring and audited finding transitions.
@@ -23,6 +30,7 @@ Use Node.js 22.18+ or 24 and npm. From the repository root:
 
 ```bash
 npm ci
+npx prisma generate
 npm test
 npm run typecheck
 npm run typecheck --prefix apps/web
@@ -59,3 +67,29 @@ The modules follow the intended flow:
 GitHub input → authenticated API → Redis queue → analysis worker → evidence and risk → PostgreSQL → dashboard.
 
 The boundaries above describe which connections remain to be implemented. See [analysis](docs/analysis.md), [architecture](docs/architecture.md), [security model](docs/threat-model.md) and [deployment](docs/deployment.md) for detail.
+
+## Review the engineering
+
+Start with the [tests](tests/) for the executable behaviour, then follow the
+[architecture](docs/architecture.md) and [threat model](docs/threat-model.md).
+The most useful review areas are deterministic risk scoring, permission checks,
+webhook signature verification, secret redaction and finding-state transitions.
+
+| Check | Command | Scope |
+| --- | --- | --- |
+| Unit tests | `npm test` | Domain logic and adapters with test fixtures |
+| Core types | `npm run typecheck` | API, worker and shared TypeScript |
+| UI types | `npm run typecheck --prefix apps/web` | React dashboard |
+| UI build | `npm run build` | Production assets; does not deploy |
+| Dependency review | `npm audit` | Includes development tooling |
+
+CI checks production dependencies with `npm audit --omit=dev`; also review the
+full audit when maintaining the repository, since Vite and Vitest are development
+attack surfaces. Do not expose development servers or test APIs to the internet.
+
+There is no public live review service to sign into. Use the local queue-receipt
+flow above to explore the prototype without connecting a real repository.
+
+`npm run lint` is currently not a working check: the repository declares ESLint 9
+but has no flat configuration file. Add and review a configuration before treating
+lint as a release gate.
